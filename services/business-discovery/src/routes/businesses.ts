@@ -204,7 +204,10 @@ businessRoutes.post('/:id/rediscover', asyncHandler(async (req, res) => {
     throw new AppError('User authentication required', 401, 'AUTH_REQUIRED');
   }
 
-  const radius = parseInt(req.body.radius) || 50;
+  const radius = Math.min(
+    parseInt(req.body.radius) || parseInt(process.env.DEFAULT_DISCOVERY_RADIUS || '50'),
+    parseInt(process.env.MAX_DISCOVERY_RADIUS || '100')
+  );
 
   const business = await BusinessModel.findOne({
     _id: req.params.id,

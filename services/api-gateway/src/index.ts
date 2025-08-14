@@ -9,6 +9,7 @@ import { Logger, errorHandler } from '@anatome-ai/utils';
 import { config } from './config';
 import { authMiddleware } from './middleware/auth';
 import { healthRouter } from './routes/health';
+import { setupSwagger } from './swagger';
 
 const app = express();
 const logger = new Logger('api-gateway');
@@ -45,6 +46,9 @@ app.use('/api/', limiter);
 
 // Health check route
 app.use('/health', healthRouter);
+
+// Setup Swagger documentation
+setupSwagger(app);
 
 // Service routes with authentication
 const services = [

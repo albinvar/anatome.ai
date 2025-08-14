@@ -12,6 +12,7 @@ import redis.asyncio as redis
 
 from services.instagram_scraper import InstagramScraper
 from services.file_storage import S3Storage
+from services.limits import VideoLimitsService
 from models.video import VideoCreate, VideoResponse, ScrapingRequest
 from utils.logger import logger
 from config import settings
@@ -20,6 +21,26 @@ app = FastAPI(
     title="Anatome.ai Video Scraping Service",
     description="Service for scraping Instagram videos and content",
     version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_tags=[
+        {
+            "name": "scraping",
+            "description": "Instagram content scraping operations",
+        },
+        {
+            "name": "videos",
+            "description": "Video management operations",
+        },
+        {
+            "name": "usage",
+            "description": "Usage tracking and limits",
+        },
+        {
+            "name": "health",
+            "description": "Service health checks",
+        },
+    ],
 )
 
 app.add_middleware(
@@ -35,11 +56,12 @@ mongodb_client: Optional[AsyncIOMotorClient] = None
 redis_client: Optional[redis.Redis] = None
 instagram_scraper: Optional[InstagramScraper] = None
 s3_storage: Optional[S3Storage] = None
+limits_service: Optional[VideoLimitsService] = None
 
 
 @app.on_event("startup")
 async def startup_event():
-    global mongodb_client, redis_client, instagram_scraper, s3_storage
+    global mongodb_client, redis_client, instagram_scraper, s3_storage, limits_service
     
     # MongoDB connection
     mongodb_client = AsyncIOMotorClient(settings.mongodb_uri)
@@ -54,6 +76,7 @@ async def startup_event():
     # Initialize services
     instagram_scraper = InstagramScraper()
     s3_storage = S3Storage()
+    limits_service = VideoLimitsService(mongodb_client)
     
     logger.info("Video Scraping service started successfully")
 
@@ -71,7 +94,7 @@ async def shutdown_event():
     logger.info("Video Scraping service shutdown completed")
 
 
-@app.get("/health")
+@app.get("/health", tags=["health"])
 async def health_check():
     checks = {
         "database": await check_mongodb_health(),
@@ -115,7 +138,7 @@ def get_user_id(x_user_id: str = Header(...)) -> str:
     return x_user_id
 
 
-@app.post("/scrape/profile", response_model=dict)
+@app.post("/scrape/profile", response_model=dict, tags=["scraping"])
 async def scrape_instagram_profile(
     request: ScrapingRequest,
     background_tasks: BackgroundTasks,
@@ -123,12 +146,26 @@ async def scrape_instagram_profile(
 ):
     """Scrape Instagram profile and queue video downloads"""
     try:
-        if not instagram_scraper:
-            raise HTTPException(status_code=503, detail="Instagram scraper not available")
+        if not instagram_scraper or not limits_service:
+            raise HTTPException(status_code=503, detail="Services not available")
         
         # Validate Instagram username
         if not request.username.replace('_', '').replace('.', '').isalnum():
             raise HTTPException(status_code=400, detail="Invalid Instagram username")
+        
+        # Check video download limits
+        limit_check = await limits_service.check_video_limit(user_id, request.max_videos)
+        if not limit_check['allowed']:
+            raise HTTPException(
+                status_code=429, 
+                detail={
+                    "message": "Video download limit exceeded",
+                    "current_count": limit_check['current_count'],
+                    "limit": limit_check['limit'],
+                    "remaining": limit_check['remaining'],
+                    "subscription": limit_check['subscription'],
+                }
+            )
         
         # Start scraping in background
         background_tasks.add_task(
@@ -137,21 +174,25 @@ async def scrape_instagram_profile(
             user_id,
             request.social_profile_id,
             request.business_id,
-            request.max_videos,
+            min(request.max_videos, limit_check['remaining']),  # Don't exceed remaining limit
         )
         
         return {
             "success": True,
             "message": f"Started scraping profile @{request.username}",
             "username": request.username,
+            "max_videos": min(request.max_videos, limit_check['remaining']),
+            "remaining_quota": limit_check['remaining'],
         }
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error starting profile scraping: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/scrape/video", response_model=VideoResponse)
+@app.post("/scrape/video", response_model=VideoResponse, tags=["scraping"])
 async def scrape_single_video(
     url: str,
     business_id: str,
@@ -212,7 +253,7 @@ async def scrape_single_video(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/videos/{business_id}")
+@app.get("/videos/{business_id}", tags=["videos"])
 async def get_scraped_videos(
     business_id: str,
     skip: int = 0,
@@ -254,7 +295,7 @@ async def get_scraped_videos(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.delete("/videos/{video_id}")
+@app.delete("/videos/{video_id}", tags=["videos"])
 async def delete_video(
     video_id: str,
     user_id: str = Depends(get_user_id),
@@ -291,6 +332,47 @@ async def delete_video(
     
     except Exception as e:
         logger.error(f"Error deleting video: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/usage", response_model=dict, tags=["usage"])
+async def get_user_usage(user_id: str = Depends(get_user_id)):
+    """Get user's video download usage statistics"""
+    try:
+        if not limits_service:
+            raise HTTPException(status_code=503, detail="Limits service not available")
+        
+        usage_stats = await limits_service.get_user_usage_stats(user_id)
+        
+        return {
+            "success": True,
+            "data": usage_stats,
+        }
+    
+    except Exception as e:
+        logger.error(f"Error getting user usage: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/limits", response_model=dict, tags=["usage"])
+async def get_subscription_limits():
+    """Get all subscription tier limits"""
+    try:
+        if not limits_service:
+            raise HTTPException(status_code=503, detail="Limits service not available")
+        
+        limits = limits_service.get_subscription_limits()
+        
+        return {
+            "success": True,
+            "data": {
+                "limits": limits,
+                "period": "monthly",
+            },
+        }
+    
+    except Exception as e:
+        logger.error(f"Error getting subscription limits: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

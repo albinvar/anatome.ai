@@ -12,7 +12,14 @@ class Settings(BaseSettings):
     redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
     redis_password: Optional[str] = os.getenv("REDIS_PASSWORD")
     
-    # AWS S3 settings
+    # Backblaze B2 settings (S3-compatible)
+    b2_endpoint_url: str = os.getenv("B2_ENDPOINT_URL", "https://s3.us-west-002.backblazeb2.com")
+    b2_access_key_id: str = os.getenv("B2_ACCESS_KEY_ID", "")
+    b2_secret_access_key: str = os.getenv("B2_SECRET_ACCESS_KEY", "")
+    b2_region: str = os.getenv("B2_REGION", "us-west-002")
+    b2_bucket_name: str = os.getenv("B2_BUCKET_NAME", "anatome-ai-videos")
+    
+    # Legacy AWS S3 support (fallback)
     aws_access_key_id: str = os.getenv("AWS_ACCESS_KEY_ID", "")
     aws_secret_access_key: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     aws_region: str = os.getenv("AWS_REGION", "us-east-1")
@@ -30,6 +37,11 @@ class Settings(BaseSettings):
     # Rate limiting
     max_requests_per_hour: int = int(os.getenv("MAX_REQUESTS_PER_HOUR", "30"))
     delay_between_requests: float = float(os.getenv("DELAY_BETWEEN_REQUESTS", "2.0"))
+    
+    # Video download limits per subscription
+    max_videos_free: int = int(os.getenv("MAX_VIDEOS_FREE", "50"))
+    max_videos_pro: int = int(os.getenv("MAX_VIDEOS_PRO", "200"))
+    max_videos_enterprise: int = int(os.getenv("MAX_VIDEOS_ENTERPRISE", "1000"))
     
     # File paths
     temp_dir: str = os.getenv("TEMP_DIR", "./temp")

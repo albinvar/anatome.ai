@@ -38,7 +38,8 @@ discoveryRoutes.post('/competitors', asyncHandler(async (req, res) => {
     throw new AppError('User authentication required', 401, 'AUTH_REQUIRED');
   }
 
-  const { businessId, radius = 50 } = req.body;
+  const requestedRadius = parseInt(req.body.radius) || parseInt(process.env.DEFAULT_DISCOVERY_RADIUS || '50');
+  const radius = Math.min(requestedRadius, parseInt(process.env.MAX_DISCOVERY_RADIUS || '100'));
 
   if (!businessId) {
     throw new AppError('Business ID is required', 400, 'VALIDATION_ERROR');

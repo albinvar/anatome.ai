@@ -11,27 +11,62 @@ from config import settings
 
 class S3Storage:
     def __init__(self):
-        self.bucket_name = settings.s3_bucket_name
-        self.region = settings.aws_region
+        # Try Backblaze B2 first, fall back to AWS S3
+        if settings.b2_access_key_id and settings.b2_secret_access_key:
+            self.bucket_name = settings.b2_bucket_name
+            self.region = settings.b2_region
+            self.endpoint_url = settings.b2_endpoint_url
+            
+            # Initialize B2 client (S3-compatible)
+            try:
+                self.s3_client = boto3.client(
+                    's3',
+                    endpoint_url=settings.b2_endpoint_url,
+                    aws_access_key_id=settings.b2_access_key_id,
+                    aws_secret_access_key=settings.b2_secret_access_key,
+                    region_name=settings.b2_region,
+                )
+                
+                # Test credentials
+                self.s3_client.head_bucket(Bucket=self.bucket_name)
+                self.is_configured = True
+                self.storage_type = "backblaze"
+                logger.info(f"Backblaze B2 storage initialized with bucket: {self.bucket_name}")
+                
+            except (ClientError, NoCredentialsError) as e:
+                logger.warning(f"Backblaze B2 not configured or accessible: {e}")
+                self.s3_client = None
+                self.is_configured = False
+                self.storage_type = None
         
-        # Initialize S3 client
-        try:
-            self.s3_client = boto3.client(
-                's3',
-                aws_access_key_id=settings.aws_access_key_id,
-                aws_secret_access_key=settings.aws_secret_access_key,
-                region_name=settings.aws_region,
-            )
+        # Fallback to AWS S3
+        if not self.is_configured and settings.aws_access_key_id and settings.aws_secret_access_key:
+            self.bucket_name = settings.s3_bucket_name
+            self.region = settings.aws_region
+            self.endpoint_url = None
             
-            # Test credentials
-            self.s3_client.head_bucket(Bucket=self.bucket_name)
-            self.is_configured = True
-            logger.info(f"S3 storage initialized with bucket: {self.bucket_name}")
-            
-        except (ClientError, NoCredentialsError) as e:
-            logger.warning(f"S3 not configured or accessible: {e}")
-            self.s3_client = None
-            self.is_configured = False
+            try:
+                self.s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=settings.aws_access_key_id,
+                    aws_secret_access_key=settings.aws_secret_access_key,
+                    region_name=settings.aws_region,
+                )
+                
+                # Test credentials
+                self.s3_client.head_bucket(Bucket=self.bucket_name)
+                self.is_configured = True
+                self.storage_type = "aws"
+                logger.info(f"AWS S3 storage initialized with bucket: {self.bucket_name}")
+                
+            except (ClientError, NoCredentialsError) as e:
+                logger.warning(f"AWS S3 not configured or accessible: {e}")
+                self.s3_client = None
+                self.is_configured = False
+                self.storage_type = None
+        
+        if not self.is_configured:
+            logger.warning("No cloud storage configured (neither Backblaze B2 nor AWS S3)")
     
     def is_healthy(self) -> bool:
         """Check if S3 storage is healthy"""
@@ -59,8 +94,11 @@ class S3Storage:
             # Upload file
             await self._upload_file_async(local_path, s3_key, 'video/mp4')
             
-            # Generate public URL
-            url = f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{s3_key}"
+            # Generate public URL based on storage type
+            if self.storage_type == "backblaze":
+                url = f"{self.endpoint_url}/{self.bucket_name}/{s3_key}"
+            else:
+                url = f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{s3_key}"
             
             logger.info(f"Video uploaded successfully: {url}")
             return url
@@ -91,8 +129,11 @@ class S3Storage:
             # Upload file
             await self._upload_file_async(local_path, s3_key, content_type)
             
-            # Generate public URL
-            url = f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{s3_key}"
+            # Generate public URL based on storage type
+            if self.storage_type == "backblaze":
+                url = f"{self.endpoint_url}/{self.bucket_name}/{s3_key}"
+            else:
+                url = f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{s3_key}"
             
             logger.info(f"Image uploaded successfully: {url}")
             return url
