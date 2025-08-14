@@ -16,6 +16,35 @@ interface SerperResponse {
   };
 }
 
+interface SerperPlace {
+  title: string;
+  address: string;
+  phoneNumber?: string;
+  website?: string;
+  category: string;
+  rating?: number;
+  reviews?: number;
+  hours?: any;
+  latitude: number;
+  longitude: number;
+  placeId: string;
+  cid?: string;
+  socialMediaLinks?: {
+    instagram?: string;
+    facebook?: string;
+    twitter?: string;
+  };
+}
+
+interface SerperPlacesResponse {
+  places: SerperPlace[];
+  searchParameters: {
+    q: string;
+    location: string;
+    type?: string;
+  };
+}
+
 export class SerperService {
   private static instance: SerperService;
   private logger: Logger;
@@ -45,6 +74,16 @@ export class SerperService {
     radius?: number;
   }): Promise<any[]> {
     try {
+      // First try Places API for more structured data
+      const places = await this.searchPlaces(params);
+      
+      if (places.length > 0) {
+        this.logger.info(`Found ${places.length} businesses using Places API`);
+        return places;
+      }
+      
+      // Fallback to regular search API
+      this.logger.info('No places found, falling back to regular search');
       const searchQuery = this.buildSearchQuery(params);
       
       const response = await axios.post<SerperResponse>(
@@ -83,6 +122,25 @@ export class SerperService {
       const typeQuery = business.type || business.industry;
       const locationQuery = `${business.location.city}, ${business.location.state}`;
       
+      // First try Places API for competitors
+      const places = await this.searchPlaces({
+        query: typeQuery,
+        location: locationQuery,
+        type: business.industry,
+        radius
+      });
+      
+      if (places.length > 0) {
+        // Filter out the original business
+        const competitors = places.filter(place => 
+          !place.name.toLowerCase().includes(business.name.toLowerCase())
+        );
+        
+        this.logger.info(`Found ${competitors.length} competitors using Places API`);
+        return competitors;
+      }
+      
+      // Fallback to regular search
       const searchQuery = `${typeQuery} businesses near ${locationQuery} ${excludeQuery}`;
 
       const response = await axios.post<SerperResponse>(
@@ -273,5 +331,131 @@ export class SerperService {
     }
     
     return details;
+  }
+
+  async searchPlaces(params: {
+    query: string;
+    location: string;
+    type?: string;
+    radius?: number;
+  }): Promise<any[]> {
+    try {
+      const searchQuery = params.type ? `${params.query} ${params.type}` : params.query;
+      
+      const response = await axios.post<SerperPlacesResponse>(
+        `${this.baseUrl}/places`,
+        {
+          q: searchQuery,
+          location: params.location,
+          hl: 'en',
+          gl: 'us',
+          radius: params.radius ? params.radius * 1000 : 50000, // Convert km to meters
+        },
+        {
+          headers: {
+            'X-API-KEY': this.apiKey,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const places = response.data.places || [];
+      return await this.enrichPlacesWithSocialMedia(places);
+    } catch (error: any) {
+      this.logger.warn('Places API search failed, will use fallback:', error.message);
+      return [];
+    }
+  }
+
+  private async enrichPlacesWithSocialMedia(places: SerperPlace[]): Promise<any[]> {
+    const enrichedPlaces = [];
+    
+    for (const place of places) {
+      let socialMedia = place.socialMediaLinks || {};
+      
+      // If Instagram not found in place data, search for it
+      if (!socialMedia.instagram) {
+        try {
+          const instagramUrl = await this.searchInstagramForBusiness(place.title);
+          if (instagramUrl) {
+            socialMedia.instagram = instagramUrl;
+          }
+        } catch (error) {
+          this.logger.debug(`Failed to find Instagram for ${place.title}:`, error.message);
+        }
+      }
+      
+      const enrichedPlace = {
+        name: place.title,
+        address: place.address,
+        phone: place.phoneNumber,
+        website: place.website,
+        category: place.category,
+        rating: place.rating,
+        reviews: place.reviews,
+        location: {
+          latitude: place.latitude,
+          longitude: place.longitude,
+        },
+        placeId: place.placeId,
+        socialMedia,
+        source: 'serper-places',
+        confidence: 0.9, // Places API generally has high confidence
+      };
+      
+      enrichedPlaces.push(enrichedPlace);
+      
+      // Add delay to respect rate limits
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    return enrichedPlaces;
+  }
+
+  async searchInstagramForBusiness(businessName: string): Promise<string | null> {
+    try {
+      const searchQuery = `"${businessName}" instagram`;
+      
+      const response = await axios.post<SerperResponse>(
+        `${this.baseUrl}/search`,
+        {
+          q: searchQuery,
+          num: 10,
+        },
+        {
+          headers: {
+            'X-API-KEY': this.apiKey,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const results = response.data.organic || [];
+      
+      // Look for Instagram URLs in the results
+      for (const result of results) {
+        // Check if the link is an Instagram profile
+        if (result.link.includes('instagram.com/') && !result.link.includes('/p/')) {
+          const instagramMatch = result.link.match(/instagram\.com\/(\w+)/);
+          if (instagramMatch && instagramMatch[1] !== 'p') {
+            this.logger.info(`Found Instagram for ${businessName}: ${result.link}`);
+            return result.link;
+          }
+        }
+        
+        // Also check snippet for Instagram mentions
+        const snippetMatch = result.snippet.match(/instagram\.com\/(\w+)/i);
+        if (snippetMatch && snippetMatch[1] !== 'p') {
+          const instagramUrl = `https://instagram.com/${snippetMatch[1]}`;
+          this.logger.info(`Found Instagram in snippet for ${businessName}: ${instagramUrl}`);
+          return instagramUrl;
+        }
+      }
+      
+      return null;
+    } catch (error: any) {
+      this.logger.error(`Instagram search failed for ${businessName}:`, error);
+      return null;
+    }
   }
 }

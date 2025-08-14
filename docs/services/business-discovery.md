@@ -102,6 +102,81 @@ SERPER_API_KEY=your_serper_key
 
 ## 🔌 API Endpoints
 
+### Business Discovery with Instagram Detection
+
+#### Discover Businesses with Automatic Instagram Detection
+```http
+POST /discovery/discover-with-instagram
+```
+
+**Description**: Primary endpoint implementing the complete business discovery flow:
+1. **Places API Search**: Uses Serper Places API to find similar businesses within radius
+2. **Instagram Detection**: Checks if Instagram profiles are available in Places API data  
+3. **Fallback Search**: For businesses without Instagram, performs "{business name} instagram" search
+4. **Profile Creation**: Automatically creates Instagram profiles in Instagram Detection Service
+5. **Queue Analysis**: Triggers reel analysis jobs for discovered Instagram profiles
+
+**Request**:
+```json
+{
+  "businessName": "Downtown Restaurant",
+  "location": "New York, NY", 
+  "businessType": "restaurant",
+  "industry": "food service",
+  "radius": 50
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "summary": {
+      "totalBusinessesFound": 25,
+      "businessesWithInstagram": 18,
+      "businessesFoundViaSearch": 7,
+      "businessesQueuedForAnalysis": 15,
+      "businessesFailedToQueue": 3,
+      "location": "New York, NY",
+      "radius": 50,
+      "searchQuery": "restaurant"
+    },
+    "businesses": [
+      {
+        "name": "Joe's Pizza",
+        "address": "123 Main St, New York, NY",
+        "phone": "(555) 123-4567",
+        "website": "https://joespizza.com",
+        "category": "Restaurant",
+        "rating": 4.5,
+        "reviews": 324,
+        "location": {
+          "latitude": 40.7128,
+          "longitude": -74.0060
+        },
+        "instagram": {
+          "url": "https://instagram.com/joespizzanyc",
+          "found": "direct",
+          "username": "joespizzanyc"
+        },
+        "socialMedia": {
+          "instagram": "https://instagram.com/joespizzanyc"
+        }
+      }
+    ],
+    "queuedForAnalysis": [
+      {
+        "businessName": "Joe's Pizza",
+        "instagramUsername": "joespizzanyc", 
+        "profileId": "profile123",
+        "status": "queued"
+      }
+    ]
+  }
+}
+```
+
 ### Business Management
 
 #### Create Business
