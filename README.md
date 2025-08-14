@@ -2,6 +2,81 @@
 
 A comprehensive microservices-based platform for competitive intelligence and content analysis, helping digital marketing companies analyze local competitor social media strategies.
 
+## 🚀 Quick Start with Docker
+
+### Prerequisites
+
+1. **Docker Desktop** - Install from [docker.com](https://www.docker.com/products/docker-desktop/)
+2. **Git** - For version control
+3. **API Keys** - Get your API keys (see Configuration section)
+
+### 1. Start Docker Desktop
+
+Make sure Docker Desktop is running on your machine.
+
+### 2. Configuration
+
+1. Copy environment variables:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit `.env` file with your API keys:
+   ```bash
+   # Required API Keys
+   SERPER_API_KEY=your-serper-api-key-from-serper.dev
+   OPENROUTER_API_KEY=your-openrouter-api-key  
+   
+   # Backblaze B2 (optional for video storage)
+   B2_ACCESS_KEY_ID=your-b2-access-key
+   B2_SECRET_ACCESS_KEY=your-b2-secret-key
+   ```
+
+### 3. Build and Run
+
+#### Option A: Full System
+```bash
+docker compose up --build
+```
+
+#### Option B: Step by Step (Recommended)
+```bash
+# 1. Start infrastructure first
+docker compose up -d mongodb redis
+
+# 2. Wait a few seconds, then start core services
+docker compose up -d user-management business-discovery instagram-detection job-queue
+
+# 3. Start API Gateway
+docker compose up -d api-gateway
+
+# 4. Start video scraping (optional)
+docker compose up -d video-scraping
+```
+
+### 4. Access Services
+
+- **API Gateway**: http://localhost:3000
+- **API Documentation**: http://localhost:3000/api/docs
+- **Job Queue Dashboard**: http://localhost:3009/health
+- **MongoDB**: localhost:27017
+- **Redis**: localhost:6379
+
+## 🏗️ Service Architecture
+
+```
+Port 3000: API Gateway (Main Entry Point)
+Port 3002: User Management Service
+Port 3001: Business Discovery Service  
+Port 3003: Instagram Detection Service
+Port 3009: Job Queue Service
+Port 8000: Video Scraping Service (Python/FastAPI)
+
+Infrastructure:
+Port 27017: MongoDB Database
+Port 6379: Redis Cache & Queue
+```
+
 ## 🚀 Architecture Overview
 
 ### Completed Services
