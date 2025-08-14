@@ -1,0 +1,275 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: anatome-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: anatome-ai
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - anatome-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: anatome-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - anatome-network
+
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: anatome-api-gateway
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      MONGODB_URI: mongodb://admin:password@mongodb:27017/anatome-ai?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./services/api-gateway:/app
+      - /app/node_modules
+    networks:
+      - anatome-network
+
+  user-management:
+    build:
+      context: ./services/user-management
+      dockerfile: Dockerfile
+    container_name: anatome-user-management
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      MONGODB_URI: mongodb://admin:password@mongodb:27017/anatome-ai?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./services/user-management:/app
+      - /app/node_modules
+    networks:
+      - anatome-network
+
+  business-discovery:
+    build:
+      context: ./services/business-discovery
+      dockerfile: Dockerfile
+    container_name: anatome-business-discovery
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    environment:
+      NODE_ENV: development
+      PORT: 3002
+      MONGODB_URI: mongodb://admin:password@mongodb:27017/anatome-ai?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERPER_API_KEY: ${SERPER_API_KEY}
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./services/business-discovery:/app
+      - /app/node_modules
+    networks:
+      - anatome-network
+
+  instagram-detection:
+    build:
+      context: ./services/instagram-detection
+      dockerfile: Dockerfile
+    container_name: anatome-instagram-detection
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    environment:
+      NODE_ENV: development
+      PORT: 3003
+      MONGODB_URI: mongodb://admin:password@mongodb:27017/anatome-ai?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERPER_API_KEY: ${SERPER_API_KEY}
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./services/instagram-detection:/app
+      - /app/node_modules
+    networks:
+      - anatome-network
+
+  video-scraping:
+    build:
+      context: ./services/video-scraping
+      dockerfile: Dockerfile
+    container_name: anatome-video-scraping
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      MONGODB_URI: mongodb://admin:password@mongodb:27017/anatome-ai?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./services/video-scraping:/app
+      - ./sessions:/app/sessions
+    networks:
+      - anatome-network
+
+  video-analysis:
+    build:
+      context: ./services/video-analysis
+      dockerfile: Dockerfile
+    container_name: anatome-video-analysis
+    restart: unless-stopped
+    ports:
+      - "3004:3004"
+    environment:
+      NODE_ENV: development
+      PORT: 3004
+      MONGODB_URI: mongodb://admin:password@mongodb:27017/anatome-ai?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      GOOGLE_GEMINI_API_KEY: ${GOOGLE_GEMINI_API_KEY}
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./services/video-analysis:/app
+      - /app/node_modules
+    networks:
+      - anatome-network
+
+  report-generation:
+    build:
+      context: ./services/report-generation
+      dockerfile: Dockerfile
+    container_name: anatome-report-generation
+    restart: unless-stopped
+    ports:
+      - "3005:3005"
+    environment:
+      NODE_ENV: development
+      PORT: 3005
+      MONGODB_URI: mongodb://admin:password@mongodb:27017/anatome-ai?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./services/report-generation:/app
+      - /app/node_modules
+    networks:
+      - anatome-network
+
+  analytics:
+    build:
+      context: ./services/analytics
+      dockerfile: Dockerfile
+    container_name: anatome-analytics
+    restart: unless-stopped
+    ports:
+      - "3006:3006"
+    environment:
+      NODE_ENV: development
+      PORT: 3006
+      MONGODB_URI: mongodb://admin:password@mongodb:27017/anatome-ai?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./services/analytics:/app
+      - /app/node_modules
+    networks:
+      - anatome-network
+
+  file-storage:
+    build:
+      context: ./services/file-storage
+      dockerfile: Dockerfile
+    container_name: anatome-file-storage
+    restart: unless-stopped
+    ports:
+      - "3007:3007"
+    environment:
+      NODE_ENV: development
+      PORT: 3007
+      MONGODB_URI: mongodb://admin:password@mongodb:27017/anatome-ai?authSource=admin
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+    depends_on:
+      - mongodb
+    volumes:
+      - ./services/file-storage:/app
+      - /app/node_modules
+    networks:
+      - anatome-network
+
+  job-queue:
+    build:
+      context: ./services/job-queue
+      dockerfile: Dockerfile
+    container_name: anatome-job-queue
+    restart: unless-stopped
+    ports:
+      - "3008:3008"
+    environment:
+      NODE_ENV: development
+      PORT: 3008
+      MONGODB_URI: mongodb://admin:password@mongodb:27017/anatome-ai?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./services/job-queue:/app
+      - /app/node_modules
+    networks:
+      - anatome-network
+
+networks:
+  anatome-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  redis_data:
